@@ -442,23 +442,121 @@ const getProfile = async (req, res, next) => {
 
 const getDashboard = async (req, res, next) => {
     try {
+        const studentsCount = await StudentModel.count();
+        const devicesCount = await DeviceModel.count();
+        const measurementsCount = await WindMeasurementModel.count();
 
+        const activeDevicesCount = await DeviceModel.count({
+            where: {
+                is_active: true
+            }
+        });
+
+        const lastMeasurement = await WindMeasurementModel.findOne({
+            order: [['created_at', 'DESC']]
+        });
+
+        const measurements = await WindMeasurementModel.findAll({
+            attributes: ['rpm']
+        });
+
+        const rpmList = measurements.map((item) => item.dataValues.rpm);
+
+        const currentRpm = lastMeasurement ? lastMeasurement.dataValues.rpm : 0;
+        const maxRpm = rpmList.length ? Math.max(...rpmList) : 0;
+        const avgRpm = rpmList.length
+            ? Math.round(rpmList.reduce((acc, item) => acc + item, 0) / rpmList.length)
+            : 0;
+
+        return res.status(200).json({
+            counts: {
+                students: studentsCount,
+                devices: devicesCount,
+                measurements: measurementsCount,
+                active_devices: activeDevicesCount
+            },
+            stats: {
+                current_rpm: currentRpm,
+                max_rpm: maxRpm,
+                avg_rpm: avgRpm
+            },
+            last_measurement: lastMeasurement
+        });
     }
     catch (error) {
         console.log(error);
         return res.status(500).json({ message: 'Неизветная ошибка сервера', error });
     }
-}
+};
 
 const getChartDeviceData = async (req, res, next) => {
     try {
+        const { deviceId } = req.params;
 
+        const device = await DeviceModel.findOne({
+            where: {
+                id: deviceId
+            }
+        });
+
+        if (!device) {
+            return res.status(404).json({
+                message: 'Данное устройство не найденно в нашей системе'
+            });
+        }
+
+        const measurements = await WindMeasurementModel.findAll({
+            where: {
+                device_id: deviceId
+            },
+            order: [['created_at', 'DESC']],
+            limit: 30
+        });
+
+        const normalizedMeasurements = measurements.reverse();
+
+        const labels = normalizedMeasurements.map((item) => {
+            return new Date(item.dataValues.created_at).toLocaleTimeString();
+        });
+
+        const rpmData = normalizedMeasurements.map((item) => {
+            return item.dataValues.rpm;
+        });
+
+        const valueData = normalizedMeasurements.map((item) => {
+            return item.dataValues.value;
+        });
+
+        return res.status(200).json({
+            device: {
+                id: device.dataValues.id,
+                name: device.dataValues.name,
+                serial_number: device.dataValues.serial_number,
+                is_active: device.dataValues.is_active
+            },
+            chart: {
+                labels,
+                datasets: [
+                    {
+                        label: 'RPM',
+                        data: rpmData
+                    },
+                    {
+                        label: 'Sensor value',
+                        data: valueData
+                    }
+                ]
+            }
+        });
     }
     catch (error) {
         console.log(error);
-        return res.status(500).json({ message: 'Неизветная ошибка сервера', error });
+        return res.status(500).json({
+            message: 'Неизветная ошибка сервера',
+            error
+        });
     }
-}
+};
 
 
 router.post('/device', saveDevice);
