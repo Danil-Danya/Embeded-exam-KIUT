@@ -2,6 +2,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import express, { Router } from 'express';
+import multer from 'multer';
+import swaggerJSDoc from 'swagger-jsdoc';
+import swaggerUi from 'swagger-ui-express';
+import swaggerDefinition from './swagger-definition.js';
 
 import jsonwebtoken from 'jsonwebtoken'
 import bcrypt from 'bcrypt';
@@ -18,10 +22,17 @@ const JWT_SECRET_ACCESS_KEY = process.env.JWT_SECRET_ACCESS_KEY;
 const app = express();
 const router = Router();
 
+const swaggerSpec = swaggerJSDoc({
+    definition: swaggerDefinition,
+    apis: []
+});
+
+
 app.use(express.urlencoded({ extended:  true, limit: "500mb" }));
 app.use(express.json());
 
 app.use('/server-api/v1/', router);
+app.use('/server-api/docs/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 
 // Предисловие: это не реальный проект, а проект для 
@@ -213,11 +224,11 @@ const studentGuardMiddleware = (req, res, next) => {
 
 const authDevice = async (req, res, next) => {
     try {
-        const { device_number } = req.body;
+        const { serial_number } = req.body;
 
         const device = await DeviceModel.findOne({
             where: { 
-                device_number
+                serial_number
             }
         });
 
@@ -225,7 +236,7 @@ const authDevice = async (req, res, next) => {
             return res.status(404).json({ message: 'Данное устройство небыло найдено в нашей системе' });
         }
 
-        const accessToken = jsonwebtoken.sign({ device_number, id: device.id }, JWT_SECRET_ACCESS_KEY);
+        const accessToken = jsonwebtoken.sign({ serial_number, id: device.id }, JWT_SECRET_ACCESS_KEY);
 
         return res.status(200).json({ accessToken });
     }
@@ -311,11 +322,11 @@ const saveDevice = async (req, res, next) => {
 
 const saveWindMeasurement = async (req, res, next) => {
     try {
-        const { id, device_id, value, rpm } = req.body;
+        const { device_id, value, rpm } = req.body;
 
         const device = await DeviceModel.findOne({
             where: {
-                device_id
+                id: device_id
             }
         });
 
@@ -324,12 +335,11 @@ const saveWindMeasurement = async (req, res, next) => {
         }
 
         if (!device.is_active) {
-            device.is_active = true;
-            device.update();
+            await device.update({ is_active: true });
         }
 
         const windMeasurement = await WindMeasurementModel.create({
-            id, device_id, value, rpm
+            device_id, value, rpm
         });
 
         return res.status(201).json(windMeasurement);
@@ -559,8 +569,22 @@ const getChartDeviceData = async (req, res, next) => {
 };
 
 
+router.post('/device/auth', authDevice);
+router.post('/student/auth', authStudent);
+
+router.post('/student', savePhotoMiddleware, saveStudent);
 router.post('/device', saveDevice);
-router.post('/wind-measurement', checkDeviceAuth, saveWindMeasurement);
+router.post('/wind-measurement', deviceGuardMiddleware, saveWindMeasurement);
+
+router.get('/student/profile', studentGuardMiddleware, getProfile);
+router.get('/student', studentGuardMiddleware, getStudent);
+router.get('/student/:id', studentGuardMiddleware, getOneStudent);
+
+router.get('/device', studentGuardMiddleware, getDevices);
+router.get('/device/:id', studentGuardMiddleware, getOneDevice);
+router.get('/device/:deviceId/chart', studentGuardMiddleware, getChartDeviceData);
+
+router.get('/dashboard', studentGuardMiddleware, getDashboard);
 
 app.listen(PORT, () => {
     console.log('Приложение запущено на http://127.0.0.1');

@@ -1,0 +1,22 @@
+services:
+  embeded-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: embeded-server
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      DB_DIALECT: sqlite
+      DB_STORAGE: /app/data/database.sqlite
+    ports:
+      - "3000:3000"
+    volumes:
+      - sqlite_data:/app/data
+      - student_images:/app/static/images
+
+volumes:
+  sqlite_data:
+  student_images:
